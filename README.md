@@ -25,8 +25,8 @@ DI 컨테이너 or IoC 컨테이너라고 한다. (팩토리 메서드 패턴)
 
 # 스프링 컨테이너 생성
 
-```java
-ApplicationContext applicationContext=new AnnotationConfigApplicationContext(SpringAppConfig.class);
+```
+ApplicationContext applicationContext = new AnnotationConfigApplicationContext.(SpringAppConfig.class);
 ```
 
 ApplicationContext를 스프링 컨테이너라고 한다.
@@ -167,20 +167,23 @@ private 생성자로 자식 객체를 만들기 어려움.
 
 ### @Configuration과 싱글톤
 
-```java
- @Bean public MemberService memberService(){
-        return new MemberServiceImpl(memberRepository());
-        }
+```
+@Bean 
+public MemberService memberService() {
+    return new MemberServiceImpl(memberRepository());
+}
 
 
-@Bean public OrderService orderService(){
-        return new OrderServiceImpl(memberRepository(),discountPolicy());
-        }
+@Bean 
+public OrderService orderService() {
+    return new OrderServiceImpl(memberRepository(),discountPolicy());
+}
 
 
-@Bean public MemoryMemberRepository memberRepository(){
-        return new MemoryMemberRepository();
-        }
+@Bean 
+public MemoryMemberRepository memberRepository() {
+    return new MemoryMemberRepository();
+}
 ```
 
 위에 코드에서 memberService를 bean 등록할 때 memberRepository() 메소드를 호출
@@ -224,6 +227,74 @@ public MemberRepository memberRepository() {
 
 @Configuration 을 빼면? 당연히 같은 bean이 계속해서 등록된다.
 
+
+---
+
+# 컴포넌트 스캔과 의존관계 자동 주입 시작하기
+
+자바 코드 @Bean이나 XML 등을 통해 스프링 빈에 등록할 설정정보를 나열했다.
+
+그러나 등록해야할 빈이 수십 수백개라면? 언제 일일이 작성할꺼임?
+
+그래서 스프링은 설정정보가 없어도 자동으로 빈을 등록하는 컴포넌트 스캔이라는 기능을 제공.
+
+이전에는 SpringAppConfig에서 설정정보(객체 생성 및 주입, 연결관계)를 정의했으나
+
+이제는 @ComponentScan을 통해 @Component가 붙은 모든 클래스를 스프링 빈으로 등록한다.
+
+이때 스프링 빈의 기본 이름은 클래스명, 클래스명의 맨 앞글자만 소문자로 변경. (물론 이름은 내가 설정가능)
+
+그리고 @Autowired가 붙은 곳을 찾아 스프링 컨테이너가 자동으로 등록된 빈을 찾아서 주입한다.
+
+기본 조회 전략은 같은 빈을 찾아서 주입 (ex: getBean(MemberRepository.class))
+
+### 탐색 위치와 기본 스캔 대상
+
+모든 자바 클래스를 다 스캔하면 오래 걸림. 따라서 필요한 위치부터 탐색할 수 있게 지정 가능
+
+```
+@ComponentScan(basePackages = "hello.core.member", excludeFilters = @ComponentScan.Filter(type = FilterType.ANNOTATION, classes = Configuration.class))
+```
+
+basePackages : 탐색할 패키지의 시작 위치 지정. 해당 패키지를 포함하여 하위 패키지 모두 탐색
+
+```
+@ComponentScan(basePackageClasses = AutoAppConfig.class, excludeFilters = @ComponentScan.Filter(type = FilterType.ANNOTATION, classes = Configuration.class))
+```
+
+basePackageClasses : 지정한 클래스의 패키지를 탐색 시작으로 정한다.
+
+만약 지정하지 않으면 @ComponentScan이 붙은 설정 정보 클래스의 패키지가 시작 위치가 된다.
+
+* 권장방법
+
+패키지 위치를 정하지 않고, 최상단에 두는 것이 좋음. 스프링부트도 이걸 제공, 권장.
+
+참고로 스프링 부트를 사용하면 스프링 부트의 대표 시작 정보인 `@SpringBootApplication` 를 이 프로젝트 시작 루트 위치에 두는 것이 관례이다.
+(그리고 이 설정안에 바로 `@ComponentScan` 이 들어있다!)
+
+### 필터
+
+includeFilters : 포함할 컴포넌트
+excludeFilters : 제외할 컴포넌트
+
+ANNOTATION : 기본값, 어노테이션을 인식해서 동작
+
+ASSIGNABLE_TYPE : 지정한 타입과 자식 타입을 인식해서 동작
+
+ASPECTJ : AspectJ 패턴 사용
+
+REGEX : 정규 표현식
+
+CUSTOM : TypeFilter 인터페이스 구현해서 처리
+
+### 중복 등록
+
+수동 등록 빈과 자동 등록 빈의 이름이 중복 되면? -->> 수동이 우선권!!!
+
+그러나 최근 스프링에서는 이러한 것들 오류가 나게 만들었다. 애매하잖아. 이런걸로 오류가 날 가능성이 충분하다.
+
+따라서 개발자도 빈 이름을 명확하게(클래스명을 중복되지 않게) 개발하는 것이 좋다.
 
 
 
