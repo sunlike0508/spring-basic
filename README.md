@@ -296,8 +296,283 @@ CUSTOM : TypeFilter 인터페이스 구현해서 처리
 
 따라서 개발자도 빈 이름을 명확하게(클래스명을 중복되지 않게) 개발하는 것이 좋다.
 
+지금 이 프로젝트는 MemberRepository 빈 중복 등록을 한다.
+
+1. 컴포넌트스캔을 통한 MemoryMemberRepository클래스에서 빈 자동 등록
+2. SpringAppConfig에서 빈 수동 등록
+
+그래서 아래와 같이 임시로 프로퍼티에서 중복 허용함.
+
+```properties
+spring.main.allow-bean-definition-overriding=true
+```
+
+그러나 다시 말하지만 중복으로 등록하는 것은 좋지 않다.
+
+---
+
+# 다양한 의존관계 주입 방법
+
+1) 생성자 주입
+
+```java
+
+@Component
+class MemberServiceImpl implements MemberService {
+
+    private final MemberRepository memberRepository;
 
 
+    @Autowired // 생성자가 1개만 있다면 이건 생략 가능하다.
+    public MemberServiceImpl(MemberRepository memberRepository) {
+        this.memberRepository = memberRepository;
+    }
+}
+```
+
+생성자 호출 시점에 딱 1번만 호출되는 것이 보장
+
+불변, 필수 의존 관계에 사용 (한계와 제한을 최대한 두는 것이 모든 코드에 좋다. 확장을 말하는 것이 아님)
+
+final을 사용할 수 있기 때문에 생성자에서 무조건 초기화 해주는 것을 보장.
+
+주입할 대상이 없으면 오류가 난다. 만약 주입할 대상 없이 실행시키고 싶으면 `@Autowired(required = false)`을 사용한다.
+
+2) 세터 주입
+
+```java
+
+@Component
+class MemberServiceImpl implements MemberService {
+
+    private MemberRepository memberRepository;
+
+
+    @Autowired
+    public void setMemberServiceImpl(MemberRepository memberRepository) {
+        this.memberRepository = memberRepository;
+    }
+}
+```
+
+선택, 변경이 가능하다.
+
+자바빈 프로퍼티 규약의 수정자 메서드 방식을 사용하는 방법이다.
+
+자바빈 프로퍼티는 과거 객체의 접근을 getter, setter를 사용해서 이용하던 규약이다.
+
+3) 필드 주입
+
+```java
+
+@Component
+class MemberServiceImpl implements MemberService {
+
+    @Autowired
+    private MemberRepository memberRepository;
+}
+```
+
+외부에서 변경이 불가능하다.
+
+DI 컨테이너가 있어야 작동한다.
+
+절대 사용하지 말자.
+
+테스트에서만 사용하자.
+
+4) 일반 메소드 주입
+
+```java
+
+@Component
+class MemberServiceImpl implements MemberService {
+
+    private final MemberRepository memberRepository;
+
+
+    @Autowired
+    public void innit(MemberRepository memberRepository) {
+        this.memberRepository = memberRepository;
+    }
+}
+```
+
+일반 메서드에 @Autowired를 이용해서 사용.
+
+당연히 스프링 빈이어야 작동한다. 그래야 스프링 컨테이너가 @Autowired를 읽으니까.
+
+### 옵션
+
+* test/autowired 참조
+
+자동 주입 대상 옵션 처리
+
+1) @Autowired(required = false)
+
+자동 주입할 대상이 없으면 수정자 메서드 자체가 호출 안됨
+
+2) @Nullable : 자동 주입할 대상이 없으면 null로 대체
+
+3) Optional<> : 자동 주입할 대상이 없으면 Optional.empty
+
+### 생성자 주입을 선택하라.
+
+* 불변
+
+의존 관계는 어플리케이션이 종료전까지 변하면 안된다.
+
+수정자 주입을 사용하면 public으로 열어둬야 한다.
+
+누군가 수정할 수 있게 만들면 안된다. 딱 1번만 생성(호출)할 수 있게 만들자.
+
+final을 사용할 수 있다. -> 생성자에서 무조건 초기화하라고 말해준다.(컴파일 오류가 뜸)
+
+만약 수정자로 했다면 컴파일에서 알려주지 않음.
+
+프레임워크에 의존하지 않고 순수한 자바 언어를 사용할 수 있다.
+
+### 롬복
+
+@RequiredArgsConstructor
+
+final이 붙은 필드를 모아서 생성자 자동 생결
+
+### 조회 빈이 2개 이상 있을 때
+
+1) @Autowired 필드 명 매칭
+
+DiscountPolicy가 정액, 정율 빈이 두개가 등록되었다 가정
+
+```java
+
+@Component
+public class OrderServiceImpl implements OrderService {
+
+    // 기존코드 -> 실패
+    public OrderServiceImpl(MemberRepository memberRepository, DiscountPolicy discountPolicy) {
+        this.memberRepository = memberRepository;
+        this.discountPolicy = fixDiscountPolicy;
+    }
+
+
+    // 필드명으로 넣은 코드 정액으로 들어감
+    public OrderServiceImpl(MemberRepository memberRepository, DiscountPolicy fixDiscountPolicy) {
+        this.memberRepository = memberRepository;
+        this.discountPolicy = fixDiscountPolicy;
+    }
+}
+```
+
+2) @Qualifier -> @Qualifier 끼리 매칭 -> 빈 이름 매칭
+
+```java
+
+@Component
+@Qualifier("mainDiscountPolicy")
+public class RateDiscountPolicy implements DiscountPolicy {}
+
+
+@Component
+@Qualifier("fixDiscountPolicy")
+public class FixDiscountPolicy implements DiscountPolicy {}
+
+// 위처럼 설정하고 
+
+
+@Component
+public class OrderServiceImpl implements OrderService {
+
+    // 주입하는 곳에서 아래와 같이 사용
+    public OrderServiceImpl(MemberRepository memberRepository,
+            @Qualifier("mainDiscountPolicy") DiscountPolicy discountPolicy) {
+        this.memberRepository = memberRepository;
+        this.discountPolicy = fixDiscountPolicy;
+    }
+
+
+    // 이렇게 수동 빈 등록할때도 사용 가능
+    @Bean
+    @Qualifier("mainDiscountPolicy")
+    public DiscountPolicy discountPolicy() {
+
+        return new RateDiscountPolicy();
+    }
+}
+
+```
+
+만약 퀄라파이어가 mainDiscountPolicy로 등록된 퀄리파이를 못찾으면 mainDiscountPolicy라고 등록된 빈을 추가로 찾는다.
+
+그러나 왠만하면 퀄리파이어는 퀄리파이어만 찾을 사용할때만 사용하는 것이 좋다.
+
+2차 기능(스프링 빈 찾기)은... 쩝
+
+3) @Primary 사용
+
+같은 빈이 여러개라면 @Primary 붙은거 먼저 주입
+
+```java
+
+@Component
+@Primary
+public class RateDiscountPolicy implements DiscountPolicy {
+
+}
+```
+
+그럼 @Qualifier 와 @Primary 둘다 있다면 우선 순위는? @Qualifier
+
+@Qualifier가 더 상세한 빈을 나타내기 떄문이다.
+
+### 조회한 빈이 모두 필요할때 List, Map
+
+의도적으로 해당 타입의 스프링 빈이 모두 필요한 경우가 있다.
+
+AllBeanTest.class 참조
+
+### 자동, 수동의 올바른 실무 운영 기준
+
+편리한 자동 기능을 기본으로 사용하자.
+
+스프링 부트는 컴포넌트 스캔을 기본으로 사용하고, 스프링 부트의 다양한 스프링 빈들도 조건이 맞으면 자동으로 등록한다.
+
+점점 자동화 된다는 의미.
+
+결정적으로 알아서 자동으로 스프링 컨테이너가 OCP, DIP를 지켜준다.
+
+그러면 수동으로는 언제?
+
+업무 로직 객체(빈) : 사용 X
+기술 지원 객체(빈) : 이때 사용한다. ex) AOP, 공통로그 등
+
+그러나 비즈니스(업무) 로직에서 다형성을 적극 활용할 때에는 수동 빈 등록 가능
+
+```java
+
+@Configuration
+public class DiscountPolicyConfig {
+
+    @Bean
+    public DiscountPolicy rateDiscountPolicy() {
+        return new RateDiscountPolicy();
+    }
+
+
+    @Bean
+    public DiscountPolicy fixDiscountPolicy() {
+        return new FixDiscountPolicy();
+    }
+}
+```
+
+아니면 자동 빈 등록사용하고 같은 패키지에 묶어 두자.
+
+참고로 스프링과 스프링부트가 자동으로 등록하는 수 많은 빈들은 굳이 내가 수동으로 할 필요 없다.
+
+예를 들어 DataSource 같은건 기술 지원 빈인데 스프링부트가 자동으로 빈으로 등록해주기 때문에 내가 수동으로 할 필요가 없다.
+
+스프링 부트가 아니라 내가 직접 기술 지원 객체를 스프링 빈으로 등록해서 개발자의 의도를 명확하게 들어 낸다.
 
 
 
