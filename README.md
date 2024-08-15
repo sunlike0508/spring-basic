@@ -25,8 +25,8 @@ DI 컨테이너 or IoC 컨테이너라고 한다. (팩토리 메서드 패턴)
 
 # 스프링 컨테이너 생성
 
-```
-ApplicationContext applicationContext = new AnnotationConfigApplicationContext(SpringAppConfig.class);
+```java
+ApplicationContext applicationContext=new AnnotationConfigApplicationContext(SpringAppConfig.class);
 ```
 
 ApplicationContext를 스프링 컨테이너라고 한다.
@@ -104,8 +104,125 @@ BeanDefinition을 직접 생성해서 스프링 컨테이너에 등록할 수 �
 
 ---
 
+# 웹 애플리케이션과 싱글톤
+
+스프링이 아닌 순수 자바로 만든 DI 컨테이너는 애플리케이션이 구동될때 등록한 빈을 가지고 있다가 클라이언트가 요청할 때 마다 등록된 빈을 새로운 객체를 생성하여 전달한다.
+
+그러면 운영에서 초당 10만개의 요청이 있다면 10만개의 객체가 생성. 운영에서는 수많은 bean이 있을 텐데 엄청난 객체를 생성해야 한다.
+
+그렇다면 객체를 하나만 생성하고 이거를 공유하면 어떨까?
+
+### 싱글톤 패턴
+
+* test/singleton
+
+클래스의 인스턴스가 딱 1개만 생성되는 것을 보장하는 디자인 패턴
+
+객체 인스턴스가 2개 이상 생성되지 않게 막으면 된다.
+
+**그래서 스프링 컨테이너는 객체를 미리 생성해서 저장해두고 고객(클라이언트)의 요청이 들어올때 마다 객체를 공유해서 효율적으로 사용.**
+
+##### 문제점
+
+구현 코드가 많다.
+
+구체 클래스에 의존 (DIP 위반, interface를 통해 이용하는 것이 아니기 때문)
+
+위에 이유로 자동스럽게 OCP도 위반
+
+테스트가 힘들다. (객체를 미리 생성하는 것이기 때문에 내가 조절하기 힘듬
+
+private 생성자로 자식 객체를 만들기 어려움.
+
+결론적으로 유연성이 떨어짐. -> 안티패턴
+
+**그러나 !!! 스프링은 위의 문제점을 모두 해결해준다.**
+
+--- 
+
+# 싱글톤 컨테이너
+
+* test/singleton 참조
+
+스프링 컨테이너는 빈 객체를 싱글톤 패턴을 적용하지 않지만 싱글콘으로 관리한다.
+
+1) 싱글톤 패턴의 지저분한 코드 들어가지 않음
+2) DIP , OCP 테스트, private 생성자로부터 자유롭게 싱글톤을 사용할 수 있다.
+
+스프링의 기본 빈 등록 방식은 싱글콘이지만, 요청할 때마다 새로운 객체를 생성해서 반환하는 기능도 있다. (빈스코프)
+
+### 주의점
+
+* test/singleton 참조
+
+싱글톤은 객체 인스턴스를 하나만 생성하서 공유하기 때문에 상태를 유지(stateful)를 하면 안된다.
+
+즉, 무상태(stateless)로 설계해야 한다.
+
+1) 특정 클라이언트의 의존적인 필드 X
+2) 특정 클라이언트가 값을 변경할 수 있는 필드가 있으면 X
+3) 가급적 읽기 기능만
+4) 필드 대신 자바에서 공유되지 않는 지역변수, 파라미터, treadLocal만 사용
+5) 스프링 빈의 필드에 공유값을 절대 설정하면 안된다.
+
+### @Configuration과 싱글톤
+
+```java
+ @Bean public MemberService memberService(){
+        return new MemberServiceImpl(memberRepository());
+        }
 
 
+@Bean public OrderService orderService(){
+        return new OrderServiceImpl(memberRepository(),discountPolicy());
+        }
+
+
+@Bean public MemoryMemberRepository memberRepository(){
+        return new MemoryMemberRepository();
+        }
+```
+
+위에 코드에서 memberService를 bean 등록할 때 memberRepository() 메소드를 호출
+
+orderService를 bean 등록할 때도 memberRepository() 메소드를 호출
+
+memberRepository()가 호출되면 new 때문에 객체를 신규로 생성해야 한다.
+
+(자바 코드이기 때문에 일단 메서드를 호출 할 수밖에 없음)
+
+이러면 싱글톤이 깨지는거 아닌가? 왜냐하면 싱글콘은 분명 객체를 오직 1개만 생성해서 한다고 했으니까.
+
+근데 위에 코드만 보면 객체를 2개를 만드는 것처럼 보인다.
+
+그러나 스프링 컨테이너는 싱글톤 패턴으로 관리한다고 했는데... 과연? 테스트 해보자
+
+* ConfigurationSingletonTest 클래스 참조
+
+SpringAppConfig 빈을 조회해서 클래스 정보를 출력해보면 순수 클래스명이 아닌 xxxCGLIB가 붙은 클래스명이 나온다.
+
+```
+class hello.core.SpringAppConfig$$SpringCGLIB$$0
+```
+
+이것은 스프링이 CGLIB라는 바이트코드를 조작 라이브러리를 사용해서 SpringAppConfig 클래스를 상속받은 임의의 다른 클래스를 만들고빈으로 등록한 것이다. (프록시)
+
+```
+
+@Bean 
+public MemberRepository memberRepository() {
+   if(memoryMemberRepository가 이미 스프링 컨테이너에 등록되어 있으면?) {
+     return 스프링 컨테이너에서 찾아서 반환;
+   } else { //스프링 컨테이너에 없으면
+        기존 로직을 호출해서 MemoryMemberRepository를 생성하고 스프링 컨테이너에 등록 return 반환
+   }
+}
+
+```
+
+그래서 이미 등록된 bean을 다시 등록할 때 새로 등록하는 것이 아닌 기존 것을 반환한다.
+
+@Configuration 을 빼면? 당연히 같은 bean이 계속해서 등록된다.
 
 
 

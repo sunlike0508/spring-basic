@@ -20,18 +20,21 @@ public class SpringAppConfig {
 
     @Bean
     public MemberService memberService() {
+        System.out.println("SpringAppConfig.memberService");
         return new MemberServiceImpl(memberRepository());
     }
 
 
     @Bean
     public OrderService orderService() {
+        System.out.println("SpringAppConfig.orderService");
         return new OrderServiceImpl(memberRepository(), discountPolicy());
     }
 
 
     @Bean
     public MemoryMemberRepository memberRepository() {
+        System.out.println("SpringAppConfig.memberRepository");
         return new MemoryMemberRepository();
     }
 
