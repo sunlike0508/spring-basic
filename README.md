@@ -574,11 +574,130 @@ public class DiscountPolicyConfig {
 
 스프링 부트가 아니라 내가 직접 기술 지원 객체를 스프링 빈으로 등록해서 개발자의 의도를 명확하게 들어 낸다.
 
+---
+
+# 빈 생명주기 콜백
+
+* test/lifecycle 참조
+
+스프링은 객체 생성 -> 의존관계 주입을 하는 라이프사이클을 가진다.
+
+스프링 빈은 객체를 생성하고, 의존관계 주입이 다 끝난 다음에 필요한 데이터를 사용할 수 있다.
+
+따라서 초기화 작업은 의존 관계 주입이 모두 완료되고 난 다음에 호출해야 한다.
+
+그러면 개발자는 의존 관계 주입이 끝난 시점을 어떻게 알까?
+
+스프링은 의존관계 주입이 완료되면 스프링 빈에게 콜백 메서드를 통해서 초기화를 할수 있는 시점을 알려준다.
+
+또한 스프링은 스프링 컨테이너가 종료되기 직전에 소멸 콜백을 알려준다.(싱글톤 패턴)
+
+스프링 빈의 이벤트 라이프사이클
+
+스프링 컨테이너 생성 -> 스프링 빈 생성 -> 의존관계 주입 -> 초기화 콜백 -> 사용 -> 소멸전 콜백 -> 스프링 종료
+
+초기화 콜백 : 빈이 생성되고, 빈의 의존관계가 주입된 후 호출 (너 이제 초기화 할 수 있어)
+소멸전 콜백 : 빈이 소멸되기 직전에 호출
+
+* 객체의 생성과 초기화를 분리하자.
+
+물론 생성자에서 객체 생성 및 주입을 하고 파리미터를 받아 초기화까지 할 수 있다.
+
+그러나!!!
+
+객체 생성(및 주입)과 객체 초기화 하는 책임을 분리!!
+
+생성자에서는 필수 정보를 받아 생성(및 주입)하는 역할만하는 것이 좋다. SRP 책임 분리원칙
+
+### 빈 생명 주기 콜백 3가지 방법
+
+1) 초기화, 소멸 인터페이스
+
+```java
+public class NetworkClient implements InitializingBean, DisposableBean {
+
+    private String url;
 
 
+    // 빈 생성이 다 되고 초기화가 끝나면 호출되는 메서드, InitializingBean 종속
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        connect();
+        call("초기화 연결 메시지");
+    }
 
 
+    // 스프링이 끝나기 직전 콜백 함수, DisposableBean 종속
+    @Override
+    public void destroy() throws Exception {
+        disconnect();
+    }
+}
+```
 
+전용 인터페이스에 의존하기 때문에 지금은 거의 사용되지 않음...
+
+2) 설정 정보에 초기화, 종료 메서드 지정
+
+```java
+
+@Configuration
+static class LifeCycleConfig {
+
+    @Bean(initMethod = "init", destroyMethod = "close")
+    public NetworkClient networkClient() {
+        NetworkClient networkClient = new NetworkClient();
+        networkClient.setUrl("http://test");
+
+        return networkClient;
+    }
+}
+
+
+public class NetworkClient {
+
+    public void init() {
+        connect();
+        call("초기화 연결 메시지");
+    }
+
+
+    public void close() {
+        disconnect();
+    }
+}
+
+
+```
+
+메서드 이름을 마음대로 설정 가능
+
+스프링 코드(1번 인터페이스 같은)에 의존하지 않는다.
+
+코드가 아닌 설정정보를 사용하기 때문에 내가 고칠 수 없는 외부 라이브러리에도 초기화, 종료 메서드
+적용할 수 있다.
+
+* 종료 메서드 추론
+
+@Bean의 destroyMethod 속성에는 아주 특별한 기능이 있다.
+
+라이브러리는 대부분 close, shutdown 이라는 이름의 종료 메서드를 사용한다.
+
+@Bean의 destoryMethod 는 기본값이 추론으로 등록되어 있다.
+
+이 추론 기능은 close, shutdown 이름 그대로 메서드를 호출한다.
+
+그래서 직접 스프링 빈 등록하면 종료 메서드는 적어주지 않아도 알아서 호출한다.
+
+추론 기능을 사용하지 싫으면 destroyMethod = "" 이렇게 공백 주면 된다.
+
+3) @PostConstruct, @PreDestroy
+
+컴포넌트 스캔과 잘 어울림
+
+단점은 외부 라이브러리에 적용이 불가능.
+
+코드를 고칠 수 없는 외부 라이브러리는 2)번을 사용
 
 
 
