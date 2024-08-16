@@ -699,6 +699,131 @@ public class NetworkClient {
 
 코드를 고칠 수 없는 외부 라이브러리는 2)번을 사용
 
+---
+
+# 빈 스코프
+
+* test/scope 참조
+
+스코프란 빈이 존재할 수 있는 범위
+
+1) 싱글톤 : 기본 스코프. 가장 긴 스코프
+
+2) 프로토타입 : 프로토타입 빈의 생성과 의존관계 주입까지만 관여. 매우 짧음
+
+스프링 컨테이너는 프로토타입 빈을 미리 생성해서 관리하지 않고 클라이언트 요청이 올때마다 빈을 생성하고 의존관계 주입 후 클라이언트에 전달한다.
+
+그리고 빈에 등록하지 않고 관리하지 않는다.
+
+따라서 @PreDestroy 메소드는 호출되지 않는다.
+
+```` text
+* 싱글콘과 함께 사용시 문제점
+
+싱글톤 빈에서 프로토타입을 사용하다보면 여러 요청이 들어왔을 때 프로토타입의 로직의 내용이 변경
+
+SingletonWritePrototypeTest1.class 참조
+
+그럼 싱글톤 빈을 사용하면서 프로토타입의 의도대로 요청(의존 관계를 주입 받을)때마다 신규 프로토타입 빈을 받고(DL : Dependency lookup) 싶다면?
+
+1. 싱글톤 호춣할때마다 프로토타입 빈을 생성한다.
+
+이러면 너무 코드가 지저분하고 스프링 컨테이너에 종속족이다. 단위 테스트를 짜기 어렵다.
+
+-> 우리는 지정한 프로토타입 빈을 컨테이너에서 대신 찾아주는 기능만 원한다.
+
+2. ObjectProvider, ObjectFactory(레거시)
+
+1)번의 문제를 해결하는 녀석.
+
+```java
+
+@Scope("singleton")
+@RequiredArgsConstructor
+static class ClientBean {
+
+    private final ObjectProvider<PrototypeBean> prototypeBeanProvider;
+
+
+    public int logic() {
+        
+        PrototypeBean prototypeBean = prototypeBeanProvider.getObject();
+        // 항상 새로운 프로토타입 빈을 생성
+
+        prototypeBean.addCount();
+
+        return prototypeBean.getCount();
+    }
+}
+
+```
+
+ObjectFactory은 기능이 단순
+
+ObjectProvider은 ObjectFactory를 상속 받은 것. 옵션, 편의 기능도 많고 별로 라이브러리 필요 없음. 그래도 스프링에 의존
+
+3. JSR-330 Provider
+
+스프링 3.0 미만은 javax.inject:javax.inject:1 추가
+
+스프링 3.0 이상은 jakarta.inject:jakarta.inject-api:2.0.1 추가
+
+자바 표준이고 mock을 사용가능
+
+ObjectProvider과 JSR은 프로토타입이 아니더라도 DL할때 언제든지 사용 가능하다.
+
+자바와 스프링이 각각 제공하는 기능이 겹칠때가 있다면 왠만하면 스프링 기능을 쓰는게 좋다.
+(예외 : JPA...)
+
+````
+
+그럼 우린 이걸 왜 쓰냐?
+
+매번 사용할 때마다 의존관계 주입이 완료된 새로운 객체를 필요하면... 이건 나도 알겟는데?
+
+근데 실무에서 거의 안씀. 왠만하면 싱글톤으로 해결 가능
+
+3) 웹 관련 스코프 : 웹 환경에서만 동작. 스프링에서 종료 시점까지 관리하기 때문에 종료 메소드 호출함.
+
+LogDemoController 클래스 참조
+
+* request : 웹 요청. http 요청마다 별도의 빈 인스턴스가 생성되고 관리.
+
+UUID를 사용해서 로그에 어떤 url을 통해 무슨 http 요청을 구분해보자.
+
+* session : 웹 세션. http session과 동일한 생명주기
+* application : 서블릿 컨텍스트와 같은 생명주기
+
+#### 스코프와 프록시
+
+```java
+
+@Component
+@Scope(value = WebApplicationContext.SCOPE_REQUEST, proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class MyLogger {}
+```
+
+proxyMode = ScopedProxyMode.TARGET_CLASS
+
+클래스면 : TARGET_CLASS
+
+인터페이스면 INTERFACES
+
+이렇게하면 MyLogger의 가짜 프록시 클래스를 만들어두고 HTTP request와 상관 없이 가짜 프록시 클래스를 다른 빈에 미리 주입해 둘 수 있다.
+
+즉, MyLogger 가짜 프록시 클래스를 LogDemoController 빈 생성하고 의존관계 주입할때 넣어 두는 것이다.
+
+그 후에 실제 요청이 오면 그때 프록시 객체 내부에서 진짜 빈을 요청하는 위임 로직을 알고 있다.
+
+그래서 myLogger.logic()을 호출하면 최초 가짜 프록시 객체의 메서드를 호출이 되고 가짜 프록시 객체는 실제 객체의 메소드를 찾아서 반환한다.
+
+자, 이거의 진짜 최고의 이점은 뭘까? 바로 클라이언트 코드를 수정하지 않는 다는 것. AOP와 같다.
+
+이것이 다형성과 DI 컨테이너가 가진 큰 장점이다.
+
+싱글톤인것 처럼 보이지만 아니다. 요청마다 새로 생성되기 때문에. 따라서 조심히 국한되어 사용하자.
+ 
+
 
 
 
